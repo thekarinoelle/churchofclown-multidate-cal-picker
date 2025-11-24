@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <style>
+        /* CSS for our custom calendar */
+        .container { padding: 15px; font-family: sans-serif; }
+        .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .calendar-header button:hover { background-color: #616265; color: white; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+        .day-header { font-weight: bold; }
+        .day-cell { padding: 5px; cursor: pointer; border-radius: 4px; }
+        .day-cell.current-month:hover { background-color: #616265; color: white; }
+        .day-cell.current-month { color: black; }
+        .day-cell.other-month { color: #ccc; cursor: not-allowed; }
+        .day-cell.selected { background-color: #fe91c4; color: black; }
+        .dates-list { margin-top: 15px; padding: 10px; border: 1px solid #ccc; min-height: 50px; margin-bottom: 15px; }
+        .date-badge { display: inline-block; background-color: #fe91c4; color: black; padding: 5px 10px; margin: 5px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        button:hover { background-color: #616265; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="calendar-header">
+            <button onclick="changeMonth(-1)"><</button> 
+            <h3 id="month-year">Month Year</h3>
+            <button onclick="changeMonth(1)">></button> 
+        </div>
+        <div class="calendar-grid" id="calendar-grid-header"></div>
+        <div class="calendar-grid" id="calendar-body"></div>
+        
+        <p>Selected Dates (Click badge to remove):</p>
+        <div class="dates-list" id="selectedDatesList"></div>
+
+        <button onclick="saveDates()">Save Selected Dates</button>
+    </div>
+
+    <script>
+        let currentMonth = new Date().getMonth();
+        let currentYear = new Date().getFullYear();
+        let selectedDates = []; 
+        let lastCheckedCellValue = "";
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+            google.script.run
+                .withSuccessHandler(initializeCalendarWithData) 
+                .getExistingDatesFromCell();
+            setInterval(checkForCellChange, 500); // Poll every 0.5 seconds
+        });
+
+        function initializeCalendarWithData(existingDates) {
+            selectedDates = existingDates; 
+            renderMonth(); 
+            updateSelectedDatesList(); 
+            const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const headerGrid = document.getElementById('calendar-grid-header');
+            headerGrid.innerHTML = '';
+            daysOfWeek.forEach(day => {
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'day-header';
+                dayHeader.textContent = day;
+                headerGrid.appendChild(dayHeader);
+            });
+        }
+
+        function checkForCellChange() {
+            google.script.run
+                .withSuccessHandler(handleCellChangeResponse)
+                .getExistingDatesFromCell();
+        }
+
+        function handleCellChangeResponse(currentDatesArray) {
+            const currentCellValue = currentDatesArray.join(', ');
+
+            // Add these console logs for debugging
+            console.log("Last checked value:", lastCheckedCellValue);
+            console.log("Current cell value:", currentCellValue);
+
+            if (currentCellValue !== lastCheckedCellValue) {
+                console.log("Mismatch detected. Updating UI.");
+                lastCheckedCellValue = currentCellValue;
+                selectedDates = currentDatesArray;
+                renderMonth();
+                updateSelectedDatesList();
+            }
+        }
+
+
+        function changeMonth(delta) { 
+            currentMonth += delta;
+            if (currentMonth > 11) { currentMonth = 0; currentYear++; } else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+            renderMonth();
+        }
+
+        function renderMonth() { 
+            const monthYearHeader = document.getElementById('month-year');
+            const calendarBody = document.getElementById('calendar-body');
+            calendarBody.innerHTML = ''; 
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            monthYearHeader.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+            const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+
+            for (let i = 0; i < firstDayOfMonth; i++) {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'day-cell other-month';
+                dayCell.textContent = daysInPrevMonth - firstDayOfMonth + i + 1;
+                calendarBody.appendChild(dayCell);
+            }
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayCell = document.createElement('div');
+                const dateString = `${String(currentMonth + 1).padStart(2, '0')}/${String(i).padStart(2, '0')}/${currentYear}`;
+                dayCell.textContent = i;
+                dayCell.className = 'day-cell current-month';
+                dayCell.dataset.date = dateString;
+
+                if (selectedDates.includes(dateString)) {
+                    dayCell.classList.add('selected');
+                }
+                dayCell.addEventListener('click', () => toggleDate(dateString, dayCell));
+                calendarBody.appendChild(dayCell);
+            }
+        }
+
+        function toggleDate(dateString, cell) { 
+            const index = selectedDates.indexOf(dateString);
+            if (index > -1) { selectedDates.splice(index, 1); cell.classList.remove('selected'); } else { selectedDates.push(dateString); cell.classList.add('selected'); }
+            updateSelectedDatesList();
+        }
+
+        function updateSelectedDatesList() { 
+            const listDiv = document.getElementById('selectedDatesList');
+            listDiv.innerHTML = '';
+            selectedDates.sort((a, b) => new Date(a) - new Date(b)); 
+
+            selectedDates.forEach(dateStr => {
+                const badge = document.createElement('span');
+                badge.className = 'date-badge';
+                badge.textContent = dateStr;
+                badge.onclick = function() { removeDate(dateStr); };
+                listDiv.appendChild(badge);
+            });
+        }
+
+        function removeDate(dateStr) { 
+            selectedDates = selectedDates.filter(date => date !== dateStr);
+            renderMonth(); 
+            updateSelectedDatesList(); 
+        }
+
+        function saveDates() { 
+            // Save asynchronously, window stays open
+            google.script.run.saveDatesToCell(selectedDates);
+        }
+    </script>
+</body>
+</html>
